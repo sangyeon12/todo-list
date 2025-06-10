@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TODO LIST</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: linear-gradient(135deg, #FFD700 0%, #FFF8DC 50%, #FFA500 100%);
+      min-height: 100vh;
+      transition: background 0.5s;
+    }
+    .check-btn {
+      transition: transform 0.2s, color 0.2s;
+      color: #d1b000;
+    }
+    .check-btn:hover {
+      transform: scale(1.3) rotate(-12deg);
+      color: #FFD700;
+      text-shadow: 0 0 8px #FFD700, 0 0 16px #FFA500;
+    }
+    .checked span {
+      text-decoration: line-through;
+      color: #bfae5a;
+      opacity: 0.7;
+    }
+    .urgency-normal {
+      background: #fff;
+    }
+    .urgency-important {
+      background: linear-gradient(90deg, #fffbe6 60%, #ffe066 100%);
+    }
+    .urgency-urgent {
+      background: linear-gradient(90deg, #fffbe6 40%, #ff7675 100%);
+    }
+  </style>
+</head>
+<body class="flex flex-col items-center justify-center">
+  <!-- 배경 그래픽 캔버스 -->
+  <canvas id="bg-canvas" class="fixed top-0 left-0 w-full h-full z-0 pointer-events-none"></canvas>
+  <!-- 정가운데 실시간 게이지 캔버스 -->
+  <div class="fixed left-1/2 top-48 -translate-x-1/2 -translate-y-1/2 z-50 flex flex-row items-center pointer-events-none" style="width: 300px; justify-content: center;">
+    <canvas
+      id="gauge-canvas"
+      width="140" height="140"
+      style="width:140px;height:140px;"
+    ></canvas>
+    <canvas
+      id="count-gauge-canvas"
+      width="140" height="140"
+      style="width:140px;height:140px; margin-left:20px;"
+    ></canvas>
+  </div>
+  <!-- 실시간 시간/날짜 표시 -->
+  <div id="datetime" class="fixed top-16 left-1/2 transform -translate-x-1/2 text-2xl font-bold text-yellow-900 drop-shadow-lg z-10 w-full flex justify-center items-center text-center"></div>
+  <!-- 배경색 변경 UI -->
+  <div class="fixed top-6 right-8 z-10 flex items-center space-x-2">
+    <label for="color1" class="text-yellow-900 font-semibold">배경색1</label>
+    <input type="color" id="color1" value="#FFD700" class="w-8 h-8 border-2 border-yellow-400 rounded-full">
+    <label for="color2" class="text-yellow-900 font-semibold">배경색2</label>
+    <input type="color" id="color2" value="#FFF8DC" class="w-8 h-8 border-2 border-yellow-400 rounded-full">
+    <label for="color3" class="text-yellow-900 font-semibold">배경색3</label>
+    <input type="color" id="color3" value="#FFA500" class="w-8 h-8 border-2 border-yellow-400 rounded-full">
+    <div class="flex flex-col items-center">
+      <label for="gaugeColor" class="text-yellow-900 font-semibold">완료게이지</label>
+      <input type="color" id="gaugeColor" value="#FFA500" class="w-8 h-8 border-2 border-yellow-400 rounded-full">
+    </div>
+    <div class="flex flex-col items-center">
+      <label for="countGaugeColor" class="text-yellow-900 font-semibold">총게이지</label>
+      <input type="color" id="countGaugeColor" value="#2563eb" class="w-8 h-8 border-2 border-yellow-400 rounded-full">
+    </div>
+  </div>
+  <div class="bg-white shadow-lg rounded-lg w-full max-w-md p-8 bg-opacity-90 mt-24">
+    <h1 class="text-2xl font-bold mb-6 text-center text-yellow-600 drop-shadow-lg">TODO LIST</h1>
+    <form id="todo-form" class="flex mb-4 space-x-2">
+      <input 
+        id="todo-input"
+        type="text"
+        placeholder="할 일을 입력하세요"
+        class="flex-1 px-3 py-2 border border-yellow-400 rounded-l focus:outline-none focus:ring-2 focus:ring-yellow-400"
+        required
+      />
+      <select id="urgency-input" class="px-2 py-2 border border-yellow-400 rounded focus:outline-none focus:ring-2 focus:ring-yellow-400 bg-white text-yellow-700 font-semibold">
+        <option value="normal">일반</option>
+        <option value="important">중요</option>
+        <option value="urgent">긴급</option>
+      </select>
+      <button
+        type="submit"
+        class="bg-yellow-500 text-white px-4 py-2 rounded-r hover:bg-yellow-600 transition"
+      >
+        추가
+      </button>
+    </form>
+    <div class="flex justify-end mb-2 space-x-2">
+      <button id="show-all-btn" class="bg-blue-400 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm font-bold transition">
+        전체 표시
+      </button>
+      <button id="delete-all-btn" class="bg-red-400 hover:bg-red-600 text-white px-3 py-1 rounded text-sm font-bold transition">
+        전체 삭제
+      </button>
+    </div>
+    <ul id="todo-list" class="space-y-2">
+      <!-- 할 일 목록이 여기에 추가됩니다 -->
+    </ul>
+  </div>
+  <script>
+    // 실시간 시간/날짜 표시
+    function updateDateTime() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const h = String(now.getHours()).padStart(2, '0');
+      const min = String(now.getMinutes()).padStart(2, '0');
+      const s = String(now.getSeconds()).padStart(2, '0');
+      document.getElementById('datetime').textContent = `${y}-${m}-${d} ${h}:${min}:${s}`;
+    }
+    setInterval(updateDateTime, 1000);
+    updateDateTime();
+
+    // 배경색 실시간 변경
+    // 게이지 색상 변수 (localStorage 적용)
+    let gaugeBarColor, countGaugeBarColor;
+
+    // 게이지 색상 초기화(로컬스토리지 적용)
+    function initGaugeColors() {
+      const savedGauge = localStorage.getItem('gaugeBarColor');
+      const savedCount = localStorage.getItem('countGaugeBarColor');
+      const gaugeInput = document.getElementById('gaugeColor');
+      const countInput = document.getElementById('countGaugeColor');
+      if (savedGauge) {
+        gaugeInput.value = savedGauge;
+        gaugeBarColor = savedGauge;
+      } else {
+        gaugeBarColor = gaugeInput.value;
+      }
+      if (savedCount) {
+        countInput.value = savedCount;
+        countGaugeBarColor = savedCount;
+      } else {
+        countGaugeBarColor = countInput.value;
+      }
+    }
+    initGaugeColors();
+
+    function updateBackground() {
+      const c1 = document.getElementById('color1').value;
+      const c2 = document.getElementById('color2').value;
+      const c3 = document.getElementById('color3').value;
+      document.body.style.background = `linear-gradient(135deg, ${c1} 0%, ${c2} 50%, ${c3} 100%)`;
+      gaugeBarColor = document.getElementById('gaugeColor').value;
+      countGaugeBarColor = document.getElementById('countGaugeColor').value;
+      // 저장
+      localStorage.setItem('gaugeBarColor', gaugeBarColor);
+      localStorage.setItem('countGaugeBarColor', countGaugeBarColor);
+    }
+    document.getElementById('color1').addEventListener('input', updateBackground);
+    document.getElementById('color2').addEventListener('input', updateBackground);
+    document.getElementById('color3').addEventListener('input', updateBackground);
+    document.getElementById('gaugeColor').addEventListener('input', updateBackground);
+    document.getElementById('countGaugeColor').addEventListener('input', updateBackground);
+
+    const form = document.getElementById('todo-form');
+    const input = document.getElementById('todo-input');
+    const urgencyInput = document.getElementById('urgency-input');
+    const list = document.getElementById('todo-list');
+
+    function createTodoItem(text, urgency) {
+      const li = document.createElement('li');
+      li.className = `flex items-center justify-between px-4 py-2 rounded shadow-sm urgency-${urgency}`;
+      li.innerHTML = `
+        <button class="check-btn mr-3 text-2xl focus:outline-none" title="완료">
+          <svg xmlns="http://www.w3.org/2000/svg" class="inline" width="24" height="24" fill="none" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="11" stroke="#FFD700" stroke-width="2" fill="white"/>
+            <path class="check-mark" d="M8 12.5l2.5 2.5 5-5" stroke="#FFD700" stroke-width="2" fill="none" style="display:none"/>
+          </svg>
+        </button>
+        <span class="flex-1">${text}</span>
+        <span class="ml-2 px-2 py-1 rounded text-xs font-bold
+          ${urgency === 'urgent' ? 'bg-red-500 text-white' : urgency === 'important' ? 'bg-yellow-300 text-yellow-900' : 'bg-gray-200 text-gray-700'}">
+          ${urgency === 'urgent' ? '긴급' : urgency === 'important' ? '중요' : '일반'}
+        </span>
+        <button class="ml-4 text-red-500 hover:text-red-700 font-bold delete-btn">삭제</button>
+      `;
+      // 체크 버튼 동작
+      const checkBtn = li.querySelector('.check-btn');
+      const svg = checkBtn.querySelector('svg');
+      const checkPath = svg.querySelector('.check-mark');
+      checkBtn.onclick = () => {
+        li.classList.toggle('checked');
+        if (li.classList.contains('checked')) {
+          checkPath.style.display = '';
+          // li.style.display = 'none'; // 체크만 표시
+        } else {
+          checkPath.style.display = 'none';
+          // li.style.display = '';
+        }
+      };
+      // 삭제 버튼 동작
+      li.querySelector('.delete-btn').onclick = () => li.remove();
+      return li;
+    }
+
+    form.onsubmit = function(e) {
+      e.preventDefault();
+      const value = input.value.trim();
+      const urgency = urgencyInput.value;
+      if (value) {
+        list.appendChild(createTodoItem(value, urgency));
+        input.value = '';
+        urgencyInput.value = 'normal';
+        input.focus();
+      }
+    };
+
+    // 전체 삭제 버튼 동작
+    document.getElementById('delete-all-btn').onclick = function() {
+      list.innerHTML = '';
+    };
+
+    // 전체 표시 버튼 동작
+    document.getElementById('show-all-btn').onclick = function() {
+      const items = list.querySelectorAll('li');
+      items.forEach(li => {
+        li.classList.add('checked');
+        // 체크 마크 표시
+        const checkPath = li.querySelector('.check-mark');
+        if (checkPath) checkPath.style.display = '';
+        li.style.display = '';
+      });
+    };
+
+    // 실시간 배경 그래픽 (움직이는 원)
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    let circles = [];
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function randomColor() {
+      // 골드 계열 색상 랜덤
+      const golds = ['#FFD700', '#FFF8DC', '#FFA500', '#FFECB3', '#FFE066', '#FFB300'];
+      return golds[Math.floor(Math.random() * golds.length)];
+    }
+
+    function createCircles() {
+      circles = [];
+      for (let i = 0; i < 18; i++) {
+        circles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          r: 30 + Math.random() * 60,
+          dx: (Math.random() - 0.5) * 0.7,
+          dy: (Math.random() - 0.5) * 0.7,
+          color: randomColor(),
+          alpha: 0.12 + Math.random() * 0.18
+        });
+      }
+    }
+    createCircles();
+    window.addEventListener('resize', createCircles);
+
+    function animateCircles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const c of circles) {
+        ctx.save();
+        ctx.globalAlpha = c.alpha;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.r, 0, 2 * Math.PI);
+        ctx.fillStyle = c.color;
+        ctx.shadowColor = c.color;
+        ctx.shadowBlur = 30;
+        ctx.fill();
+        ctx.restore();
+
+        c.x += c.dx;
+        c.y += c.dy;
+        // 화면 밖으로 나가면 반대편에서 등장
+        if (c.x < -c.r) c.x = canvas.width + c.r;
+        if (c.x > canvas.width + c.r) c.x = -c.r;
+        if (c.y < -c.r) c.y = canvas.height + c.r;
+        if (c.y > canvas.height + c.r) c.y = -c.r;
+      }
+      requestAnimationFrame(animateCircles);
+    }
+    animateCircles();
+
+    // === 맨 위 중앙 실시간 그래픽 게이지 ===
+    const gaugeCanvas = document.getElementById('gauge-canvas');
+    const gaugeCtx = gaugeCanvas.getContext('2d');
+
+    // 추가: 작성한 글 개수 게이지용 캔버스
+    let countGaugeCanvas = document.getElementById('count-gauge-canvas');
+    const countGaugeCtx = countGaugeCanvas.getContext('2d');
+
+    function resizeGaugeCanvas() {
+      gaugeCanvas.width = 140;
+      gaugeCanvas.height = 140;
+      countGaugeCanvas.width = 140;
+      countGaugeCanvas.height = 140;
+      // 위치는 CSS로 고정
+    }
+    window.addEventListener('resize', resizeGaugeCanvas);
+    resizeGaugeCanvas();
+
+    // 게이지: 사용량(할 일 완료/전체) 원형바
+    function drawGauge() {
+      const w = gaugeCanvas.width;
+      const h = gaugeCanvas.height;
+      gaugeCtx.clearRect(0, 0, w, h);
+
+      // 전체/완료 개수 계산
+      const items = document.querySelectorAll('#todo-list li');
+      const total = items.length;
+      const checked = Array.from(items).filter(li => li.classList.contains('checked')).length;
+      const percent = total === 0 ? 0 : checked / total;
+
+      // 게이지 위치: 캔버스 중앙
+      const cx = w / 2;
+      const cy = h / 2;
+      const radius = 60;
+
+      // 배경 원
+      gaugeCtx.save();
+      gaugeCtx.globalAlpha = 0.18;
+      gaugeCtx.beginPath();
+      gaugeCtx.arc(cx, cy, radius, 0, 2 * Math.PI);
+      gaugeCtx.strokeStyle = "#FFD700";
+      gaugeCtx.lineWidth = 14;
+      gaugeCtx.shadowColor = "#FFD700";
+      gaugeCtx.shadowBlur = 16;
+      gaugeCtx.stroke();
+      gaugeCtx.restore();
+
+      // 진행 게이지 (원형바)
+      gaugeCtx.save();
+      gaugeCtx.globalAlpha = 0.85;
+      gaugeCtx.beginPath();
+      gaugeCtx.arc(cx, cy, radius, -Math.PI/2, -Math.PI/2 + percent * 2 * Math.PI);
+      gaugeCtx.strokeStyle = gaugeBarColor;
+      gaugeCtx.lineWidth = 14;
+      gaugeCtx.shadowColor = gaugeBarColor;
+      gaugeCtx.shadowBlur = 24;
+      gaugeCtx.lineCap = "round";
+      gaugeCtx.stroke();
+      gaugeCtx.restore();
+
+      // 텍스트(용량)
+      gaugeCtx.save();
+      gaugeCtx.font = "bold 18px sans-serif";
+      gaugeCtx.fillStyle = "#bfae5a";
+      gaugeCtx.textAlign = "center";
+      gaugeCtx.textBaseline = "middle";
+      gaugeCtx.globalAlpha = 0.9;
+      gaugeCtx.fillText(`완료: ${checked} / ${total}`, cx, cy);
+      gaugeCtx.restore();
+
+      // 작성한 글 개수 게이지도 그림
+      drawCountGauge(total);
+
+      requestAnimationFrame(drawGauge);
+    }
+
+    // 작성한 글 개수 원형바
+    function drawCountGauge(total) {
+      const w = countGaugeCanvas.width;
+      const h = countGaugeCanvas.height;
+      countGaugeCtx.clearRect(0, 0, w, h);
+
+      // 최대 20개 기준(20개 이상이면 100%)
+      const maxCount = 20;
+      const percent = Math.min(total / maxCount, 1);
+
+      const cx = w / 2;
+      const cy = h / 2;
+      const radius = 60;
+
+      // 배경 원
+      countGaugeCtx.save();
+      countGaugeCtx.globalAlpha = 0.13;
+      countGaugeCtx.beginPath();
+      countGaugeCtx.arc(cx, cy, radius, 0, 2 * Math.PI);
+      countGaugeCtx.strokeStyle = "#60a5fa";
+      countGaugeCtx.lineWidth = 14;
+      countGaugeCtx.shadowColor = "#60a5fa";
+      countGaugeCtx.shadowBlur = 16;
+      countGaugeCtx.stroke();
+      countGaugeCtx.restore();
+
+      // 진행 게이지 (원형바)
+      countGaugeCtx.save();
+      countGaugeCtx.globalAlpha = 0.85;
+      countGaugeCtx.beginPath();
+      countGaugeCtx.arc(cx, cy, radius, -Math.PI/2, -Math.PI/2 + percent * 2 * Math.PI);
+      countGaugeCtx.strokeStyle = countGaugeBarColor;
+      countGaugeCtx.lineWidth = 14;
+      countGaugeCtx.shadowColor = countGaugeBarColor;
+      countGaugeCtx.shadowBlur = 24;
+      countGaugeCtx.lineCap = "round";
+      countGaugeCtx.stroke();
+      countGaugeCtx.restore();
+
+      // 텍스트(작성한 글 개수)
+      countGaugeCtx.save();
+      countGaugeCtx.font = "bold 18px sans-serif";
+      countGaugeCtx.fillStyle = "#2563eb";
+      countGaugeCtx.textAlign = "center";
+      countGaugeCtx.textBaseline = "middle";
+      countGaugeCtx.globalAlpha = 0.95;
+      countGaugeCtx.fillText(`총 ${total}개`, cx, cy);
+      countGaugeCtx.restore();
+    }
+
+    drawGauge();
+  </script>
+</body>
+</html>
